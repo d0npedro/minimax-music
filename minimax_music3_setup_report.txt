@@ -1,0 +1,76 @@
+================================================================================
+MiniMax Music 3 Setup Report - NVIDIA RTX 5080 (16 GB)
+Generated: 2026-08-16
+Status: SUCCESS
+================================================================================
+
+## STEP 0 - Environment
+- ComfyUI root: D:\WAN22\ComfyUI_windows_portable
+- ComfyUI version: 0.33.0 (updated from 0.30.0 via update\update.py)
+- Git: v0.33.0-12-gaaabf342  ("Add MiniMax Music 3 to readme")
+- Frontend: comfyui-frontend-package 1.49.6
+- Templates: comfyui-workflow-templates 0.11.41 (includes MiniMax Music 3)
+- GPU: NVIDIA GeForce RTX 5080
+- VRAM total: 16303 MiB (~16 GB)
+- PyTorch: 2.12.0+cu130
+- Disk: D: ~16 GB free (too tight for weights) -> models stored on H:
+
+## STEP 1 - ComfyUI update
+- Method: D:\WAN22\ComfyUI_windows_portable\update\update.py
+- ComfyUI-Manager: pulled to 4f56cf3d
+- ComfyUI-KJNodes: pulled to 3f20054
+- Side effect: ComfyUI-LTXVideo failed to import after the core bump
+  (ImportError: interleaved_freqs_cis). Unrelated to Music 3; native nodes work.
+
+## STEP 2 - Models (Comfy-Org/MiniMax-Music-3)
+Download method: multi-range HTTP + SHA256 verify (H3-style; VAE via curl).
+extra_model_paths.yaml maps H:/toolz/minimax-music/models/ into ComfyUI.
+
+| File | Path | Size | SHA256 |
+|------|------|------|--------|
+| Diffusion INT8 | models/diffusion_models/minimax_music3_dit_int8_convrot.safetensors | 2.502 GB | d6b95963... |
+| Diffusion FP16 | models/diffusion_models/minimax_music3_dit_fp16.safetensors | 4.914 GB | 45494a2b... |
+| Text encoder INT8 | models/text_encoders/minimax_music3_text_encoder_pruned_int8_convrot.safetensors | 9.197 GB | 010b7416... |
+| VAE | models/vae/minimax_music3_dav.safetensors | 0.217 GB | 2a32155b... |
+
+Default for this 16 GB card: INT8 DiT + INT8 text encoder + tiled VAE decode.
+
+## STEP 3 - Workflows
+- Official template: H:\toolz\minimax-music\workflows\audio_minimax_music_3.json
+- Hard-techno UI graph (INT8 + user prompt): workflows\minimax_music3_hard_techno.json
+  also copied to ComfyUI\user\default\workflows\
+- API smoke graph: workflows\minimax_music3_smoke_api.json
+
+## STEP 4 - Launch
+- Server: http://127.0.0.1:8188  (left running after setup)
+- Flags: --listen 127.0.0.1 --port 8188 --reserve-vram 0.9
+- Helper: H:\toolz\minimax-music\scripts\launch_comfyui.bat
+- Extra paths confirmed in startup log:
+  diffusion_models / text_encoders / vae -> H:\toolz\minimax-music\models\...
+
+## STEP 5 - Verification generation
+- Prompt ID: d40cd87c-18c4-48b9-97f3-20e46d02fbd9
+- Result: SUCCESS (status_str=success, execution_success)
+- Generation wall time: 39.86 seconds (ComfyUI: Prompt executed in 39.86 seconds)
+- Models: INT8 DiT + INT8 text encoder + DAV VAE, tiled decode 1536/64
+- Sampler: euler / simple / 30 steps / cfg 1.7 / seed 42 / max_duration 30s
+- Caption: Hard Techno 150 BPM warehouse (user baseline)
+- Lyrics: [intro] Systems online. / [verse] Signals pulsing... / [drop]
+- Output: D:\WAN22\ComfyUI_windows_portable\ComfyUI\output\audio\minimax_music3_smoke_00001.mp3
+- Probe: MP3 stereo 44100 Hz, duration 29.99 s, size 907674 bytes (~886 KB)
+- Errors: none
+
+## How to run again
+1. If ComfyUI is not already up: H:\toolz\minimax-music\scripts\launch_comfyui.bat
+   or D:\WAN22\ComfyUI_windows_portable\run_nvidia_gpu.bat
+2. Open http://127.0.0.1:8188
+3. Templates > Audio > MiniMax Music 3  (or load minimax_music3_hard_techno.json)
+4. Map dropdowns if needed:
+   - UNet: minimax_music3_dit_int8_convrot.safetensors  (or fp16 if VRAM allows)
+   - CLIP type: minimax  /  minimax_music3_text_encoder_pruned_int8_convrot.safetensors
+   - VAE: minimax_music3_dav.safetensors
+5. Keep tiled_decode ON on this 16 GB card.
+
+================================================================================
+END OF REPORT
+================================================================================

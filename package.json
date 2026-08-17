@@ -1,0 +1,14 @@
+{
+  "name": "main-floor-dj",
+  "private": true,
+  "description": "Local two-deck clean techno DJ + MiniMax Music 3 generate",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "serve": "node dj/serve.js",
+    "start": "node scripts/start.js",
+    "launch-check": "node tests/launch-check.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+models/
+tracks/
+logs/
+*.part
+.playwright/
+test-results/
+playwright-report/
