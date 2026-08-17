@@ -10,6 +10,7 @@
   var OnePress = root.MainFloorOnePress;
   var Endless = root.MainFloorEndless;
   var Crate = root.MainFloorCrate;
+  var Stage = root.MainFloorStage;
 
   var state = {
     session: Deck ? Deck.createSession() : null,
@@ -20,6 +21,7 @@
     peaks: { a: [], b: [] },
     endless: Endless ? Endless.createEndless({ arcIndex: 1 }) : null,
     crate: Crate ? Crate.createCrate({ warmupSize: 4, targetSize: 5 }) : null,
+    stageFixture: null,
   };
 
   var audio = null;
@@ -177,9 +179,39 @@
     drawWave(id);
   }
 
+  function liveStageInput() {
+    var mixP = 0;
+    if (state.endless && state.endless.mixing && Endless && Endless.mixProgress) {
+      mixP = Endless.mixProgress(state.endless, nowClock());
+    }
+    return {
+      session: state.session,
+      crate: state.crate,
+      endless: state.endless,
+      mixProgress: mixP,
+      peaks: state.peaks,
+    };
+  }
+
+  function renderStage() {
+    if (!Stage || !Stage.buildStage) return null;
+    var rootEl = document.getElementById("stage");
+    if (!rootEl) return null;
+    var model = Stage.buildStage(state.stageFixture || liveStageInput());
+    if (Stage.render) Stage.render(rootEl, model);
+    return model;
+  }
+
+  function applyStageFixture(input) {
+    state.stageFixture = input || null;
+    render();
+    return Stage && Stage.buildStage ? Stage.buildStage(input || liveStageInput()) : null;
+  }
+
   function render() {
     renderDeck("a");
     renderDeck("b");
+    renderStage();
   }
 
   function updateXfaderUi() {
@@ -495,7 +527,11 @@
         return gen;
       }
       if (Crate && state.crate && gen.audioBuffer) {
-        Crate.push(state.crate, { audioBuffer: gen.audioBuffer, meta: gen.meta });
+        Crate.push(state.crate, {
+          audioBuffer: gen.audioBuffer,
+          meta: gen.meta,
+          peaks: Stage && Stage.peaksFromAudioBuffer ? Stage.peaksFromAudioBuffer(gen.audioBuffer) : null,
+        });
       }
       setStatus("buffer " + crateCount() + "/" + (state.crate ? state.crate.targetSize : 5));
       return { ok: true, crate: crateCount() };
@@ -806,6 +842,9 @@
     previewFromCurrent: previewFromCurrent,
     resolveTarget: resolveTarget,
     loadArrayBuffer: loadArrayBuffer,
+    applyStageFixture: applyStageFixture,
+    liveStageInput: liveStageInput,
+    renderStage: renderStage,
   };
   root.MainFloorApp = api;
 

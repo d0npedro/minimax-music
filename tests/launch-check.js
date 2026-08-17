@@ -7,8 +7,8 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 
-const SCRATCH = process.env.SCRATCH || "C:\\Users\\info\\AppData\\Local\\Temp\\grok-goal-ed98a422a75e\\implementer";
-const PORT = Number(process.env.DJ_PORT || 8787);
+const SCRATCH = process.env.SCRATCH || "C:\\Users\\info\\AppData\\Local\\Temp\\grok-goal-1de505506ed7\\implementer";
+const PORT = Number(process.env.DJ_PORT || 8797);
 const URL = "http://127.0.0.1:" + PORT + "/";
 const ROOT = path.join(__dirname, "..");
 
@@ -62,13 +62,91 @@ function playwrightAvailable() {
   return r.status === 0 && /Playwright|Version/i.test(out);
 }
 
+function stageFixture() {
+  function wave(n, amp) {
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(amp + Math.abs(Math.sin(i / 6)) * 0.35);
+    return out;
+  }
+  return {
+    session: {
+      decks: {
+        a: {
+          id: "a",
+          loaded: true,
+          playing: true,
+          trackName: "Neon Warehouse",
+          artist: "Pedda vom Mond",
+          position: 90,
+          duration: 180,
+        },
+        b: {
+          id: "b",
+          loaded: true,
+          playing: false,
+          trackName: "Peak Schranz",
+          artist: "Main Floor",
+          position: 0,
+          duration: 200,
+        },
+      },
+    },
+    crate: {
+      items: [
+        { meta: { trackName: "Last 20 Minutes", artist: "Closing Crew" }, peaks: wave(64, 0.28) },
+        { meta: { trackName: "Night Shift", artist: "Acid Unit" }, peaks: wave(64, 0.22) },
+        { meta: { trackName: "Closed Eyes", artist: "Pedda" }, peaks: wave(64, 0.18) },
+      ],
+    },
+    endless: { liveId: "a", nextId: "b", mixing: false, enabled: true },
+    mixProgress: 0,
+    peaks: { a: wave(128, 0.5), b: wave(128, 0.36) },
+  };
+}
+
+async function paintedFraction(page) {
+  return page.locator("#stage-canvas").evaluate(function (canvas) {
+    var ctx = canvas.getContext("2d");
+    var w = canvas.width;
+    var h = canvas.height;
+    var data = ctx.getImageData(0, 0, w, h).data;
+    var painted = 0;
+    var total = w * h;
+    var minX = w;
+    var minY = h;
+    var maxX = 0;
+    var maxY = 0;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var i = (y * w + x) * 4;
+        if (data[i + 3] > 8 && data[i] + data[i + 1] + data[i + 2] > 0) {
+          painted++;
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    var bbox = painted ? (maxX - minX + 1) * (maxY - minY + 1) : 0;
+    return {
+      width: w,
+      height: h,
+      painted: painted,
+      total: total,
+      fraction: painted / total,
+      bboxFraction: bbox / total,
+    };
+  });
+}
+
 async function runPlaywright() {
   const { chromium } = require("playwright");
   const browser = await chromium.launch({ headless: true });
   const logs = [];
   try {
     for (let i = 0; i < 2; i++) {
-      const page = await browser.newPage();
+      const page = await browser.newPage({ viewport: { width: 1400, height: 980 } });
       const errors = [];
       page.on("pageerror", function (err) {
         errors.push(String(err));
@@ -80,13 +158,50 @@ async function runPlaywright() {
         errors.push("console.error " + text);
       });
       await page.goto(URL, { waitUntil: "networkidle", timeout: 30000 });
-      const box = await page.locator("main#booth").boundingBox();
-      const bodyBox = await page.locator("body").boundingBox();
-      if (!box || !bodyBox) throw new Error("missing booth/body bbox on visit " + (i + 1));
-      const fill = (box.width * box.height) / (bodyBox.width * bodyBox.height);
-      logs.push("visit " + (i + 1) + " booth=" + JSON.stringify(box) + " fill=" + fill.toFixed(3) + " errors=" + errors.length);
+      const box = await page.locator("#stage").boundingBox();
+      if (!box) throw new Error("missing #stage bbox on visit " + (i + 1));
+      const aspect = box.width / box.height;
+      logs.push(
+        "visit " + (i + 1) + " stage=" + JSON.stringify(box) + " aspect=" + aspect.toFixed(4) + " errors=" + errors.length
+      );
       if (errors.length) throw new Error("page errors: " + errors.join(" | "));
-      if (fill < 0.25) throw new Error("main surface not substantially filled, fill=" + fill);
+      if (Math.abs(aspect - 16 / 9) > 0.03) {
+        throw new Error("stage aspect is not 16:9: " + aspect + " box=" + JSON.stringify(box));
+      }
+      if (Math.abs(box.width - 1280) > 2 || Math.abs(box.height - 720) > 2) {
+        throw new Error("stage drawing box is not 1280x720: " + JSON.stringify(box));
+      }
+      const beforeTitle = await page.locator("[data-role=now-title]").textContent();
+      const beforeWave = await page.locator("[data-role=now-wave]").evaluate(function (c) {
+        return c.toDataURL();
+      });
+      await page.evaluate(function (fixture) {
+        return window.MainFloorApp.applyStageFixture(fixture);
+      }, stageFixture());
+      await page.waitForFunction(function () {
+        var el = document.querySelector("[data-role=now-title]");
+        return el && /Neon Warehouse/.test(el.textContent || "");
+      }, { timeout: 4000 });
+      const afterTitle = await page.locator("[data-role=now-title]").textContent();
+      const afterArtist = await page.locator("[data-role=now-artist]").textContent();
+      const afterWave = await page.locator("[data-role=now-wave]").evaluate(function (c) {
+        return c.toDataURL();
+      });
+      logs.push("driven title=" + JSON.stringify(afterTitle) + " artist=" + JSON.stringify(afterArtist));
+      if (!/Neon Warehouse/.test(afterTitle || "")) {
+        throw new Error("driven fixture did not change now-playing title: " + afterTitle + " (was " + beforeTitle + ")");
+      }
+      if (!/Pedda vom Mond/.test(afterArtist || "")) {
+        throw new Error("driven fixture did not show artist: " + afterArtist);
+      }
+      if (afterWave === beforeWave) {
+        throw new Error("driven fixture did not change now-playing waveform");
+      }
+      const paint = await paintedFraction(page);
+      logs.push("paint=" + JSON.stringify(paint));
+      if (paint.fraction < 0.85 || paint.bboxFraction < 0.85) {
+        throw new Error("stage surface not substantially filled: " + JSON.stringify(paint));
+      }
       await page.waitForFunction(function () {
         var el = document.getElementById("comfy-pill");
         return el && (el.getAttribute("data-ready") === "up" || el.getAttribute("data-ready") === "down");
@@ -97,19 +212,8 @@ async function runPlaywright() {
       if (ready !== "up" && ready !== "down") {
         throw new Error("pill did not reflect ComfyUI up/down: " + pill);
       }
-      await page.locator("#magic-btn").click();
-      await page.waitForFunction(function () {
-        var el = document.getElementById("gen-status");
-        return el && el.textContent && el.textContent.trim() !== "idle";
-      }, { timeout: 8000 });
-      const preview = await page.locator("#caption-preview").textContent();
-      const status = await page.locator("#gen-status").textContent();
-      logs.push("after magic click preview=" + JSON.stringify(preview).slice(0, 240) + " status=" + status);
-      if (!/queued|cooking|loaded|offline|magic started|endless|buffer|warming/i.test(status || "")) {
-        throw new Error("one-press did not change visible generate status: " + status);
-      }
       const shot = path.join(SCRATCH, i === 1 ? "dj-page.png" : "dj-page-first.png");
-      await page.screenshot({ path: shot, fullPage: true });
+      await page.locator("#stage").screenshot({ path: shot });
       await page.close();
     }
   } finally {

@@ -1,7 +1,8 @@
 {
   "name": "main-floor-dj",
   "private": true,
-  "description": "Local two-deck clean techno DJ + MiniMax Music 3 generate",
+  "version": "2.0.0",
+  "description": "Local auto-DJ with 16:9 OBS stage + MiniMax Music 3 generate",
   "scripts": {
     "test": "node --test tests/*.test.js",
     "serve": "node dj/serve.js",
