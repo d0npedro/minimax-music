@@ -13,7 +13,7 @@ test("pure scripts attach window globals without Node module/require", () => {
     globalThis: window,
     console: console,
   };
-  for (const file of ["mixer.js", "deck.js", "generate.js", "readiness.js", "tracks.js", "one-press.js", "endless.js", "crate.js", "audio-engine.js", "comfy-client.js", "stage.js", "app.js"]) {
+  for (const file of ["mixer.js", "deck.js", "generate.js", "readiness.js", "tracks.js", "album.js", "one-press.js", "endless.js", "crate.js", "audio-engine.js", "comfy-client.js", "hex-analysis.js", "echo-mapping.js", "ghost-modes.js", "stage.js", "magic-flow.js", "lab.js", "app.js", "live-swap.js"]) {
     const code = fs.readFileSync(path.join(JS, file), "utf8");
     vm.runInNewContext(code, sandbox, { filename: file });
   }
@@ -22,6 +22,10 @@ test("pure scripts attach window globals without Node module/require", () => {
   assert.equal(typeof window.MainFloorMixer.channelGains, "function");
   assert.equal(typeof window.MainFloorDeck.syncTo, "function");
   assert.equal(typeof window.MainFloorGenerate.buildComfyPrompt, "function");
+  assert.equal(typeof window.MainFloorGenerate.uniqueTitle, "function");
+  assert.equal(typeof window.MainFloorTracks.displayNameFromFile, "function");
+  assert.equal(typeof window.MainFloorAlbum.sortAlbum, "function");
+  assert.equal(typeof window.MainFloorApp.startAlbum, "function");
   assert.equal(typeof window.MainFloorReadiness.checkModels, "function");
   assert.equal(window.MainFloorReadiness.systemStatsUrl(), "/comfy/system_stats");
   assert.equal(typeof window.MainFloorOnePress.startMagic, "function");
@@ -33,6 +37,27 @@ test("pure scripts attach window globals without Node module/require", () => {
   assert.equal(typeof window.MainFloorApp.applyStageFixture, "function");
   assert.equal(typeof window.MainFloorStage.buildStage, "function");
   assert.equal(typeof window.MainFloorStage.render, "function");
+  assert.equal(typeof window.MainFloorHex.analyzeMonoPcm, "function");
+  assert.equal(typeof window.MainFloorEcho.mapFrameToVisual, "function");
+  assert.equal(typeof window.MainFloorEcho.visualStateFromLive, "function");
+  assert.equal(typeof window.MainFloorGhost.drawOrganic, "function");
+  assert.equal(typeof window.MainFloorGhost.drawKaleidoscope, "function");
+  assert.equal(typeof window.MainFloorGhost.drawFluid, "function");
+  assert.equal(typeof window.MainFloorGhost.drawOrbit, "function");
+  assert.equal(typeof window.MainFloorGhost.drawLattice, "function");
+  assert.equal(typeof window.MainFloorGhost.drawAurora, "function");
+  assert.equal(typeof window.MainFloorGhost.drawTransition, "function");
+  assert.equal(typeof window.MainFloorGhost.nextInRotation, "function");
+  assert.equal(typeof window.MainFloorGhost.pickRandomMode, "function");
+  assert.equal(typeof window.MainFloorApp.setVisualMode, "function");
+  assert.equal(typeof window.MainFloorApp.afterLiveSwap, "function");
+  assert.equal(typeof window.MainFloorLiveSwap.planApply, "function");
+  assert.equal(typeof window.MainFloorGhost.registerMode, "function");
+  assert.equal(typeof window.MainFloorApp.startPlayback, "function");
+  assert.equal(typeof window.MainFloorMagic.canStartPlayback, "function");
+  assert.equal(typeof window.MainFloorMagic.magicButtonEnabled, "function");
+  assert.equal(typeof window.MainFloorLab.overlayView, "function");
+  assert.equal(typeof window.MainFloorTracks.metaFromFileName, "function");
   const staged = window.MainFloorStage.buildStage({
     session: {
       decks: {

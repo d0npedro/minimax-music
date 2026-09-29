@@ -101,6 +101,9 @@ test("now-playing title and artist match the live deck display fields", () => {
 });
 
 test("playhead is position/duration and maps onto waveform width", () => {
+  assert.equal(stage.formatClock(0), "0:00");
+  assert.equal(stage.formatClock(65), "1:05");
+  assert.equal(stage.formatClock(180), "3:00");
   const mid = stage.buildStage(liveSet({ livePosition: 90, liveDuration: 180 }));
   assert.equal(mid.nowPlaying.playhead, 0.5);
   assert.equal(mid.nowPlaying.playheadX, 0.5 * stage.WAVEFORM_WIDTH);
@@ -204,6 +207,29 @@ test("mix progress 1 and post-handoff drop the outgoing track from the view", ()
   assert.equal(after.upcoming[0].title, "Last 20 Minutes");
 });
 
+test("buildStage carries a live-lab overlay and MiniMax credit on the 16:9 model", () => {
+  const input = liveSet();
+  input.overlay = { kicker: "Pedda vom Mond Automixer", title: "Generating", params: [{ label: "BPM", value: "148" }], workflow: ["KSampler"] };
+  input.statusHint = "GENERATING";
+  const view = stage.buildStage(input);
+  assert.equal(view.credit, "Pedda vom Mond Automixer");
+  assert.equal(view.statusHint, "GENERATING");
+  assert.equal(view.overlay.title, "Generating");
+  assert.equal(view.overlay.params[0].value, "148");
+});
+
+test("buildStage carries visualizer mode and VisualState through the 16:9 model", () => {
+  const echo = require("../dj/js/echo-mapping.js");
+  const visual = echo.idleVisual(1);
+  const view = stage.buildStage(
+    Object.assign(liveSet(), { visualMode: "kaleidoscope", visual: visual, time: 1 })
+  );
+  assert.equal(view.visualMode, "kaleidoscope");
+  assert.ok(view.visual);
+  assert.equal(view.visual.energy, visual.energy);
+  assert.equal(view.capture.width / view.capture.height, 16 / 9);
+});
+
 test("capture surface is a fixed 16:9 stage", () => {
   const view = stage.buildStage(liveSet());
   assert.ok(view.capture);
@@ -220,18 +246,115 @@ test("artist falls back to a stable string when the track has none", () => {
   assert.ok(view.nowPlaying.artist.length > 0);
 });
 
-test("page ships a 16:9 capture stage instead of a visible two-deck booth", () => {
+test("page is a black shell with Magic then Play over a 16:9 canvas", () => {
   const html = fs.readFileSync(path.join(__dirname, "..", "dj", "index.html"), "utf8");
   const css = fs.readFileSync(path.join(__dirname, "..", "dj", "css", "dj.css"), "utf8");
   assert.match(html, /id="stage"/);
   assert.match(html, /data-capture="16:9"/);
-  assert.match(html, /data-role="now-title"/);
-  assert.match(html, /data-role="now-artist"/);
-  assert.match(html, /data-role="now-wave"/);
-  assert.match(html, /id="upcoming-list"/);
-  assert.match(html, /src="js\/stage\.js"/);
-  assert.match(html, /id="booth"[^>]*hidden/);
+  assert.match(html, /id="stage-canvas"/);
+  assert.match(html, /id="stage-hud"/);
+  assert.match(html, /id="magic-btn"/);
+  assert.match(html, /START THE MAGIC/);
+  assert.match(html, /id="play-btn"/);
+  assert.match(html, /id="queue-activity"/);
+  assert.match(html, /id="queue-count"/);
+  assert.match(html, /src="js\/magic-flow\.js"/);
+  assert.match(html, /src="js\/lab\.js"/);
+  assert.match(html, /src="js\/live-swap\.js"/);
+  assert.match(html, /src="js\/album\.js"/);
+  assert.match(html, /id="hud-yt"/);
+  assert.doesNotMatch(html, /id="booth"/);
+  assert.doesNotMatch(html, /id="generate-btn"/);
+  assert.doesNotMatch(html, /energy-arc/);
   assert.match(css, /--stage-w:\s*1280px/);
   assert.match(css, /--stage-h:\s*720px/);
-  assert.match(css, /\.booth\[hidden\]/);
+  assert.match(css, /background:\s*#000/);
+  assert.match(css, /\.stage-hud/);
+  assert.doesNotMatch(css, /\[data-source="album"\]\[data-phase="playing"\] \.stage-hud/);
+  assert.doesNotMatch(css, /\.shell\[data-phase="playing"\] \.gen-status/);
+  assert.doesNotMatch(css, /\.stage-hud[^{]*\{[^}]*background:\s*linear-gradient/);
+});
+
+test("status and lab overlay stay inside the centered 9:16 column", () => {
+  const safe = stage.portraitSafeRect(1280, 720);
+  assert.ok(Math.abs(safe.width - (720 * 9) / 16) < 0.51);
+  assert.equal(safe.cx, 640);
+  assert.ok(safe.x > 400 && safe.x < 460);
+  const layout = stage.chromeLayout(1280, 720);
+  assert.equal(layout.status.align, "center");
+  assert.equal(layout.status.x, safe.cx);
+  assert.ok(layout.overlay.x >= safe.x);
+  assert.ok(layout.overlay.x + layout.overlay.width <= safe.x + safe.width + 0.01);
+  assert.ok(layout.status.y > 720 * 0.7);
+  assert.ok(layout.timeline.x >= safe.x);
+  assert.ok(layout.timeline.x + layout.timeline.width <= safe.x + safe.width + 0.01);
+  assert.equal(layout.timeline.cx, safe.cx);
+});
+
+test("toggleFullscreen drives the shipped Fullscreen path and chrome class", async () => {
+  const doc = {
+    fullscreenElement: null,
+    exitFullscreen: function () {
+      this.fullscreenElement = null;
+      return Promise.resolve();
+    },
+  };
+  const el = {
+    className: "",
+    attrs: {},
+    classList: {
+      _on: false,
+      toggle: function (name, force) {
+        if (name !== "is-fullscreen") return;
+        this._on = !!force;
+      },
+      contains: function (name) {
+        return name === "is-fullscreen" && this._on;
+      },
+    },
+    setAttribute: function (k, v) {
+      this.attrs[k] = v;
+    },
+    requestFullscreen: function () {
+      doc.fullscreenElement = el;
+      return Promise.resolve();
+    },
+  };
+  assert.equal(stage.isFullscreen(el, doc), false);
+  assert.equal(stage.shouldHandleFullscreenHotkey({ key: "f", target: { tagName: "BODY" } }), true);
+  assert.equal(stage.shouldHandleFullscreenHotkey({ key: "f", target: { tagName: "TEXTAREA" } }), false);
+  assert.equal(stage.shouldHandleFullscreenHotkey({ key: "f", ctrlKey: true, target: { tagName: "BODY" } }), false);
+  const on = await stage.toggleFullscreen(el, doc);
+  assert.equal(on, true);
+  assert.equal(doc.fullscreenElement, el);
+  assert.equal(stage.isFullscreen(el, doc), true);
+  assert.equal(el.attrs["data-fullscreen"], "true");
+  const off = await stage.toggleFullscreen(el, doc);
+  assert.equal(off, false);
+  assert.equal(doc.fullscreenElement, null);
+  assert.equal(stage.isFullscreen(el, doc), false);
+});
+
+test("toggleFullscreen falls back to CSS chrome when the API is missing", async () => {
+  const el = {
+    attrs: {},
+    classList: {
+      _on: false,
+      toggle: function (name, force) {
+        if (name === "is-fullscreen") this._on = !!force;
+      },
+      contains: function (name) {
+        return name === "is-fullscreen" && this._on;
+      },
+    },
+    setAttribute: function (k, v) {
+      this.attrs[k] = v;
+    },
+  };
+  const on = await stage.toggleFullscreen(el, {});
+  assert.equal(on, true);
+  assert.equal(el.classList.contains("is-fullscreen"), true);
+  const off = await stage.toggleFullscreen(el, {});
+  assert.equal(off, false);
+  assert.equal(el.classList.contains("is-fullscreen"), false);
 });

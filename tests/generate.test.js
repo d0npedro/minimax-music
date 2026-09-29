@@ -37,7 +37,13 @@ test("each named preset builds caption/lyrics/duration and smoke-workflow model 
     assert.equal(payload["13"].inputs.max_duration, req.maxDuration);
     assert.ok(req.maxDuration > 0);
     assert.equal(req.preset, name);
+    assert.equal(typeof req.title, "string");
+    assert.doesNotMatch(req.title, /peak schranz|warehouse drive|last 20|bpm/i);
+    assert.equal(req.title, gen.uniqueTitle({ seed: 7, preset: name, arc: req.arc, energy: req.energy, bpm: req.bpm }));
   }
+  const a = gen.buildFromPreset("Peak Schranz", { seed: 1 });
+  const b = gen.buildFromPreset("Peak Schranz", { seed: 99 });
+  assert.notEqual(a.title, b.title);
 });
 
 test("free prompt payload still names MiniMax Music 3 models", () => {
@@ -65,6 +71,15 @@ test("Match-playing-deck copies BPM ±2 and energy into caption + payload", () =
   assert.equal(req.bpmMin, 148);
   assert.equal(req.bpmMax, 152);
   assert.equal(req.mode, "match");
+});
+
+test("applyStyleShift changes production notes and seed without jumping BPM wildly", () => {
+  const base = gen.buildFromPreset("Warehouse Drive", { seed: 10 });
+  const next = gen.applyStyleShift(base, 1);
+  assert.notEqual(next.seed, base.seed);
+  assert.notEqual(next.caption, base.caption);
+  assert.ok(Math.abs(next.bpm - base.bpm) <= 4);
+  assert.match(next.caption, /Instrumental only/);
 });
 
 test("energy-arc position changes the built caption for preset and match", () => {

@@ -23,6 +23,49 @@
   var INSTRUMENTAL_LYRICS =
     "[Intro]\n\n[Instrumental]\n\n[Drop]\n\n[Outro]\n";
 
+  var TITLE_LEFT = [
+    "Iron", "Wet", "Cold", "Black", "Raw", "Dry", "Blind", "Hollow",
+    "Mute", "Acid", "Night", "Steel", "Dead", "Burnt", "Silent", "Hard",
+    "Lost", "Sharp", "False", "Empty", "Rust", "Low", "Red", "Deep",
+  ];
+  var TITLE_RIGHT = [
+    "Halo", "Rivet", "Voltage", "Concrete", "Ammonia", "Catwalk", "Fuse", "Silo",
+    "Sodium", "Girder", "Static", "Tunnel", "Clamp", "Relay", "Ash", "Needle",
+    "Current", "Grate", "Cylinder", "Drift", "Circuit", "Bolt", "Chamber", "Signal",
+  ];
+
+  function hash32(text) {
+    var h = 2166136261;
+    var s = String(text || "");
+    var i;
+    for (i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function uniqueTitle(opts) {
+    opts = opts || {};
+    var key = [opts.file, opts.seed, opts.preset, opts.arc, opts.energy, opts.bpm, opts.label]
+      .filter(function (v) {
+        return v != null && String(v) !== "";
+      })
+      .join("|");
+    if (!key) key = "floor";
+    var h = hash32(key);
+    var left = TITLE_LEFT[h % TITLE_LEFT.length];
+    var right = TITLE_RIGHT[Math.floor(h / TITLE_LEFT.length) % TITLE_RIGHT.length];
+    return left + " " + right;
+  }
+
+  var STYLE_SHIFTS = [
+    "tighter industrial kick, dry warehouse air, restrained hats",
+    "heavier bass pressure, rolling hats, longer blend tails",
+    "denser offbeat stabs, harder distortion, higher rhythm density",
+    "wider stereo hats, deeper sub kick, slightly more open midrange",
+  ];
+
   var PRESETS = {
     "Warehouse Drive": {
       bpm: 148,
@@ -124,9 +167,18 @@
       prompt: opts.prompt,
       style: opts.style,
     });
+    var title = opts.title || uniqueTitle({
+      seed: seed,
+      preset: opts.preset,
+      arc: arc,
+      energy: energy,
+      bpm: bpm,
+      label: opts.label,
+    });
     return {
       mode: opts.mode || "prompt",
       preset: opts.preset || null,
+      title: title,
       arc: arc,
       energy: energy,
       bpm: bpm,
@@ -187,6 +239,28 @@
       maxDuration: opts.maxDuration != null ? opts.maxDuration : 60,
       seed: opts.seed,
       prompt: "Match playing deck energy " + energy + " at " + (bpm - 2) + "-" + (bpm + 2) + " BPM",
+    });
+  }
+
+  function applyStyleShift(request, shiftIndex) {
+    request = request || {};
+    var idx = Math.abs(Number(shiftIndex) || 0) % STYLE_SHIFTS.length;
+    var note = STYLE_SHIFTS[idx];
+    var bpm = Number(request.bpm) || 150;
+    var drift = (idx % 3) - 1;
+    var nextBpm = Math.max(140, Math.min(160, bpm + drift * 2));
+    var seed = ((Number(request.seed) || 1) * 1103515245 + 12345 + idx * 9973) >>> 0;
+    return buildRequest({
+      mode: request.mode || "prompt",
+      preset: request.preset,
+      arc: request.arc,
+      energy: request.energy,
+      bpm: nextBpm,
+      maxDuration: request.maxDuration,
+      seed: seed,
+      lyrics: request.lyrics,
+      prompt: note,
+      style: request.style,
     });
   }
 
@@ -286,6 +360,9 @@
     buildFromPreset: buildFromPreset,
     buildFromPrompt: buildFromPrompt,
     matchPlayingDeck: matchPlayingDeck,
+    applyStyleShift: applyStyleShift,
+    uniqueTitle: uniqueTitle,
+    STYLE_SHIFTS: STYLE_SHIFTS,
     buildComfyPrompt: buildComfyPrompt,
   };
 });

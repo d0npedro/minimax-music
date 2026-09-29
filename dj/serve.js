@@ -8,6 +8,14 @@ const tracks = require("./js/tracks.js");
 const root = __dirname;
 const projectRoot = path.join(__dirname, "..");
 const TRACKS_DIR = path.join(projectRoot, "tracks");
+const ALBUM_DIR = process.env.ALBUM_DIR || "F:\\Downloads\\Schranz Has Returned\\mastered";
+const SET_MATERIAL_DIR = process.env.SET_MATERIAL_DIR || "H:\\Schranz Set Material";
+const CLIPS_DIR = process.env.CLIPS_DIR || "H:\\Downloads\\output";
+const DJI_DIR = process.env.DJI_DIR || "H:\\DJI Album";
+const PEDDA_MIX_DIR = process.env.PEDDA_MIX_DIR || "H:\\Zeitraffer";
+const GEH_HEIM_DIR = process.env.GEH_HEIM_DIR || "H:\\Medien\\Videos\\geh heim";
+const DJI_A_DIR = process.env.DJI_A_DIR || "H:\\DJI Album\\a";
+const DJI_B_DIR = process.env.DJI_B_DIR || "H:\\DJI Album\\b";
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "127.0.0.1";
 const comfyHost = process.env.COMFY_HOST || "127.0.0.1";
@@ -22,9 +30,52 @@ const mime = {
   ".png": "image/png",
   ".mp3": "audio/mpeg",
   ".wav": "audio/wav",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".avi": "video/x-msvideo",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
 };
 
+function mimeFor(filePath) {
+  return mime[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+}
+
+function addLiveFile(files, rel) {
+  var abs = path.join(root, rel);
+  if (!fs.existsSync(abs)) return;
+  var st = fs.statSync(abs);
+  files[rel.replace(/\\/g, "/")] = { mtimeMs: st.mtimeMs, size: st.size };
+}
+
+function liveManifest() {
+  var liveSwap;
+  try {
+    liveSwap = require("./js/live-swap.js");
+  } catch (e) {
+    liveSwap = null;
+  }
+  var files = {};
+  var list = (liveSwap && liveSwap.SWAP) || [];
+  list.forEach(function (rel) {
+    addLiveFile(files, rel);
+  });
+  var featDir = path.join(root, "js", "features");
+  if (fs.existsSync(featDir)) {
+    fs.readdirSync(featDir).forEach(function (name) {
+      if (!/\.js$/i.test(name)) return;
+      addLiveFile(files, "js/features/" + name);
+    });
+  }
+  var rev = liveSwap && liveSwap.manifestRev ? liveSwap.manifestRev(files) : String(Date.now());
+  return { ok: true, rev: rev, files: files };
+}
+
 function writeJson(res, code, obj) {
+  if (res.headersSent) return;
   const body = Buffer.from(JSON.stringify(obj));
   res.writeHead(code, {
     "Content-Type": "application/json; charset=utf-8",
@@ -35,19 +86,25 @@ function writeJson(res, code, obj) {
 }
 
 function probeComfy(cb) {
+  var done = false;
+  function finish(up) {
+    if (done) return;
+    done = true;
+    cb(!!up);
+  }
   const req = http.get(
     { hostname: comfyHost, port: comfyPort, path: "/system_stats", timeout: 1500 },
     function (pres) {
       pres.resume();
-      cb(pres.statusCode === 200);
+      finish(pres.statusCode === 200);
     }
   );
   req.on("error", function () {
-    cb(false);
+    finish(false);
   });
   req.on("timeout", function () {
     req.destroy();
-    cb(false);
+    finish(false);
   });
 }
 
@@ -112,6 +169,173 @@ function readBody(req) {
   });
 }
 
+function mediaKind(name) {
+  if (/\.(mp4|webm|mov|avi)$/i.test(name)) return "video";
+  return "";
+}
+
+function listClipFiles(dir) {
+  var folder = dir || CLIPS_DIR;
+  if (!fs.existsSync(folder)) return [];
+  return fs
+    .readdirSync(folder)
+    .filter(function (f) {
+      return !!mediaKind(f);
+    })
+    .sort();
+}
+
+function listDirMedia(folder, source) {
+  if (!fs.existsSync(folder)) return [];
+  return fs
+    .readdirSync(folder)
+    .filter(function (f) {
+      return !!mediaKind(f);
+    })
+    .sort()
+    .map(function (f) {
+      return { file: f, source: source, kind: mediaKind(f) };
+    });
+}
+
+function walkDirMedia(folder, source, prefix, out) {
+  if (!fs.existsSync(folder)) return out;
+  var entries;
+  try {
+    entries = fs.readdirSync(folder, { withFileTypes: true });
+  } catch (err) {
+    return out;
+  }
+  entries.forEach(function (ent) {
+    var rel = prefix ? prefix + "/" + ent.name : ent.name;
+    var full = path.join(folder, ent.name);
+    if (ent.isDirectory()) {
+      walkDirMedia(full, source, rel, out);
+      return;
+    }
+    if (!mediaKind(ent.name)) return;
+    out.push({ file: rel.replace(/\\/g, "/"), source: source, kind: mediaKind(ent.name) });
+  });
+  return out;
+}
+
+function listMediaFiles() {
+  var setOut = [];
+  walkDirMedia(SET_MATERIAL_DIR, "set", "", setOut);
+  if (setOut.length) {
+    setOut.sort(function (a, b) {
+      return a.file.localeCompare(b.file);
+    });
+    return setOut;
+  }
+  var out = [];
+  walkDirMedia(PEDDA_MIX_DIR, "pedda", "", out);
+  walkDirMedia(GEH_HEIM_DIR, "heim", "geh-heim", out);
+  walkDirMedia(DJI_A_DIR, "djia", "dji-a", out);
+  walkDirMedia(DJI_B_DIR, "djib", "dji-b", out);
+  if (out.length) {
+    out.sort(function (a, b) {
+      return a.file.localeCompare(b.file);
+    });
+    return out;
+  }
+  return listDirMedia(CLIPS_DIR, "output").concat(listDirMedia(DJI_DIR, "dji"));
+}
+
+function resolveUnder(rootDir, rel) {
+  if (!rootDir || !fs.existsSync(rootDir)) return null;
+  var full = path.resolve(rootDir, rel);
+  if (full.startsWith(path.resolve(rootDir)) && fs.existsSync(full)) return full;
+  return null;
+}
+
+function resolveClipFile(name) {
+  var rel = String(name || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!rel || rel.indexOf("..") !== -1 || !mediaKind(path.basename(rel))) return null;
+  var setFile = resolveUnder(SET_MATERIAL_DIR, rel);
+  if (setFile) return setFile;
+  if (rel.indexOf("geh-heim/") === 0) {
+    var heim = resolveUnder(GEH_HEIM_DIR, rel.slice("geh-heim/".length));
+    if (heim) return heim;
+  }
+  if (rel.indexOf("dji-a/") === 0) {
+    var djia = resolveUnder(DJI_A_DIR, rel.slice("dji-a/".length));
+    if (djia) return djia;
+  }
+  if (rel.indexOf("dji-b/") === 0) {
+    var djib = resolveUnder(DJI_B_DIR, rel.slice("dji-b/".length));
+    if (djib) return djib;
+  }
+  var pedda = resolveUnder(PEDDA_MIX_DIR, rel);
+  if (pedda) return pedda;
+  var heimFlat = resolveUnder(GEH_HEIM_DIR, path.basename(rel));
+  if (heimFlat) return heimFlat;
+  var base = path.basename(rel);
+  var dirs = [CLIPS_DIR, DJI_DIR];
+  var i;
+  for (i = 0; i < dirs.length; i++) {
+    var full = resolveUnder(dirs[i], base);
+    if (full) return full;
+  }
+  return null;
+}
+
+function pipeFile(stream, res) {
+  stream.on("error", function () {
+    if (!res.headersSent) {
+      res.writeHead(503, { "Cache-Control": "no-store" });
+    }
+    try {
+      res.end();
+    } catch (err) {}
+  });
+  res.on("close", function () {
+    stream.destroy();
+  });
+  stream.pipe(res);
+}
+
+function streamRange(req, res, filePath, contentType) {
+  var st;
+  try {
+    st = fs.statSync(filePath);
+  } catch (err) {
+    if (!res.headersSent) res.writeHead(err && err.code === "EBUSY" ? 503 : 404);
+    res.end();
+    return;
+  }
+  var size = st.size;
+  var range = req.headers && req.headers.range;
+  var type = contentType || mimeFor(filePath);
+  if (range) {
+    var m = String(range).match(/bytes=(\d*)-(\d*)/);
+    var start = m && m[1] ? Number(m[1]) : 0;
+    var end = m && m[2] ? Number(m[2]) : size - 1;
+    if (end >= size) end = size - 1;
+    if (start < 0 || start > end || start >= size) {
+      res.writeHead(416, { "Content-Range": "bytes */" + size });
+      res.end();
+      return;
+    }
+    res.writeHead(206, {
+      "Content-Type": type,
+      "Content-Length": end - start + 1,
+      "Content-Range": "bytes " + start + "-" + end + "/" + size,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "public, max-age=3600",
+    });
+    pipeFile(fs.createReadStream(filePath, { start: start, end: end }), res);
+    return;
+  }
+  res.writeHead(200, {
+    "Content-Type": type,
+    "Content-Length": size,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "public, max-age=3600",
+  });
+  pipeFile(fs.createReadStream(filePath), res);
+}
+
 function saveTrackBuffer(buf, meta) {
   fs.mkdirSync(TRACKS_DIR, { recursive: true });
   var name = tracks.trackFileName(meta);
@@ -141,6 +365,87 @@ const server = http.createServer(function (req, res) {
       .catch(function (err) {
         writeJson(res, 500, { ok: false, error: String(err && err.message) });
       });
+    return;
+  }
+  if (req.method === "GET" && urlPath.indexOf("/tracks/") === 0) {
+    var name = path.basename(decodeURIComponent(urlPath.slice("/tracks/".length)));
+    if (!/\.(mp3|wav|flac)$/i.test(name) || name !== path.basename(name)) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    var audioFile = path.resolve(TRACKS_DIR, name);
+    if (!audioFile.startsWith(path.resolve(TRACKS_DIR)) || !fs.existsSync(audioFile)) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    fs.readFile(audioFile, function (err, data) {
+      if (err) {
+        res.writeHead(404);
+        res.end("not found");
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": mime[path.extname(audioFile)] || "application/octet-stream",
+        "Cache-Control": "no-store",
+      });
+      res.end(data);
+    });
+    return;
+  }
+  if (req.method === "GET" && urlPath === "/album") {
+    if (!fs.existsSync(ALBUM_DIR)) {
+      writeJson(res, 200, { ok: true, dir: ALBUM_DIR, files: [] });
+      return;
+    }
+    var albumFiles = fs
+      .readdirSync(ALBUM_DIR)
+      .filter(function (f) {
+        return /\.(wav|mp3|flac)$/i.test(f);
+      })
+      .map(function (f) {
+        var st = fs.statSync(path.join(ALBUM_DIR, f));
+        return { file: f, bytes: st.size, mtime: st.mtime.toISOString() };
+      });
+    writeJson(res, 200, { ok: true, dir: "album", files: albumFiles });
+    return;
+  }
+  if (req.method === "GET" && urlPath.indexOf("/album/") === 0) {
+    var albumName = path.basename(decodeURIComponent(urlPath.slice("/album/".length)));
+    if (!/\.(wav|mp3|flac)$/i.test(albumName)) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    var albumFile = path.resolve(ALBUM_DIR, albumName);
+    if (!albumFile.startsWith(path.resolve(ALBUM_DIR)) || !fs.existsSync(albumFile)) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    var st = fs.statSync(albumFile);
+    res.writeHead(200, {
+      "Content-Type": mime[path.extname(albumFile)] || "audio/wav",
+      "Content-Length": st.size,
+      "Cache-Control": "no-store",
+    });
+    fs.createReadStream(albumFile).pipe(res);
+    return;
+  }
+  if (req.method === "GET" && urlPath === "/clips") {
+    writeJson(res, 200, { ok: true, dir: "clips", files: listMediaFiles() });
+    return;
+  }
+  if (req.method === "GET" && urlPath.indexOf("/clips/") === 0) {
+    var clipName = decodeURIComponent(urlPath.slice("/clips/".length));
+    var clipFile = resolveClipFile(clipName);
+    if (!clipFile) {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+    streamRange(req, res, clipFile, mimeFor(clipFile));
     return;
   }
   if (req.method === "GET" && urlPath === "/tracks") {
@@ -175,6 +480,10 @@ const server = http.createServer(function (req, res) {
     proxyComfy(req, res);
     return;
   }
+  if (req.method === "GET" && urlPath === "/live/manifest") {
+    writeJson(res, 200, liveManifest());
+    return;
+  }
   if (urlPath === "/") urlPath = "/index.html";
   var rel = urlPath.replace(/^\/+/, "").replace(/\\/g, "/");
   if (rel.split("/").indexOf("..") !== -1) {
@@ -194,7 +503,10 @@ const server = http.createServer(function (req, res) {
       res.end("not found");
       return;
     }
-    res.writeHead(200, { "Content-Type": mime[path.extname(file)] || "application/octet-stream" });
+    var ext = path.extname(file);
+    var headers = { "Content-Type": mime[ext] || "application/octet-stream" };
+    if (ext === ".js" || ext === ".css" || ext === ".html") headers["Cache-Control"] = "no-store";
+    res.writeHead(200, headers);
     res.end(data);
   });
 });
@@ -222,5 +534,18 @@ module.exports = {
   proxyComfy: proxyComfy,
   sanitizeProxyHeaders: sanitizeProxyHeaders,
   TRACKS_DIR: TRACKS_DIR,
+  ALBUM_DIR: ALBUM_DIR,
+  SET_MATERIAL_DIR: SET_MATERIAL_DIR,
+  CLIPS_DIR: CLIPS_DIR,
+  DJI_DIR: DJI_DIR,
+  PEDDA_MIX_DIR: PEDDA_MIX_DIR,
+  GEH_HEIM_DIR: GEH_HEIM_DIR,
+  DJI_A_DIR: DJI_A_DIR,
+  DJI_B_DIR: DJI_B_DIR,
+  listClipFiles: listClipFiles,
+  listMediaFiles: listMediaFiles,
+  resolveClipFile: resolveClipFile,
+  streamRange: streamRange,
   saveTrackBuffer: saveTrackBuffer,
+  liveManifest: liveManifest,
 };

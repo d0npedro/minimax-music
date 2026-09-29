@@ -16,6 +16,7 @@
       items: [],
       warmupSize: opts.warmupSize != null ? opts.warmupSize : 4,
       targetSize: opts.targetSize != null ? opts.targetSize : 5,
+      maxSize: opts.maxSize != null ? opts.maxSize : opts.targetSize != null ? opts.targetSize : 5,
     };
   }
 
@@ -38,6 +39,12 @@
     return !!(crate && size(crate) < crate.targetSize);
   }
 
+  function atCapacity(crate) {
+    if (!crate) return true;
+    var cap = crate.maxSize != null ? crate.maxSize : crate.targetSize;
+    return size(crate) >= cap;
+  }
+
   function readyToStart(crate) {
     return !!(crate && size(crate) >= crate.warmupSize);
   }
@@ -48,6 +55,7 @@
     push: push,
     shift: shift,
     needsFill: needsFill,
+    atCapacity: atCapacity,
     readyToStart: readyToStart,
   };
 });

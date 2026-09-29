@@ -142,6 +142,12 @@
     deck.playing = false;
     if (info.bpm) setBpm(deck, info.bpm);
     if (info.energy) deck.energy = info.energy;
+    deck.artist = info.artist || null;
+    deck.album = info.album || null;
+    deck.youtubeMusic = info.youtubeMusic || null;
+    deck.albumIndex = info.albumIndex != null ? info.albumIndex : null;
+    deck.catalog = info.catalog || null;
+    deck.file = info.file || (info.meta && info.meta.file) || null;
     deck.hotCues = [null, null, null, null];
     deck.loop = { in: null, out: null, enabled: false };
     return deck;
@@ -150,6 +156,12 @@
   function emptyDeck(deck) {
     deck.loaded = false;
     deck.trackName = null;
+    deck.artist = null;
+    deck.album = null;
+    deck.youtubeMusic = null;
+    deck.albumIndex = null;
+    deck.catalog = null;
+    deck.file = null;
     deck.duration = 0;
     deck.position = 0;
     deck.playing = false;

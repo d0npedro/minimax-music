@@ -7,7 +7,7 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 
-const SCRATCH = process.env.SCRATCH || "C:\\Users\\info\\AppData\\Local\\Temp\\grok-goal-1de505506ed7\\implementer";
+const SCRATCH = process.env.SCRATCH || "C:\\Users\\info\\AppData\\Local\\Temp\\grok-goal-63a8a82f0856\\implementer";
 const PORT = Number(process.env.DJ_PORT || 8797);
 const URL = "http://127.0.0.1:" + PORT + "/";
 const ROOT = path.join(__dirname, "..");
@@ -158,62 +158,65 @@ async function runPlaywright() {
         errors.push("console.error " + text);
       });
       await page.goto(URL, { waitUntil: "networkidle", timeout: 30000 });
-      const box = await page.locator("#stage").boundingBox();
-      if (!box) throw new Error("missing #stage bbox on visit " + (i + 1));
-      const aspect = box.width / box.height;
-      logs.push(
-        "visit " + (i + 1) + " stage=" + JSON.stringify(box) + " aspect=" + aspect.toFixed(4) + " errors=" + errors.length
-      );
+      const magic = await page.locator("#magic-btn").textContent();
+      const playHidden = await page.locator("#play-btn").getAttribute("hidden");
+      logs.push("visit " + (i + 1) + " magic=" + JSON.stringify(magic) + " playHidden=" + playHidden + " errors=" + errors.length);
       if (errors.length) throw new Error("page errors: " + errors.join(" | "));
-      if (Math.abs(aspect - 16 / 9) > 0.03) {
-        throw new Error("stage aspect is not 16:9: " + aspect + " box=" + JSON.stringify(box));
-      }
-      if (Math.abs(box.width - 1280) > 2 || Math.abs(box.height - 720) > 2) {
-        throw new Error("stage drawing box is not 1280x720: " + JSON.stringify(box));
-      }
-      const beforeTitle = await page.locator("[data-role=now-title]").textContent();
-      const beforeWave = await page.locator("[data-role=now-wave]").evaluate(function (c) {
-        return c.toDataURL();
+      if (!/START THE MAGIC/i.test(magic || "")) throw new Error("missing Magic button label");
+      if (playHidden == null) throw new Error("Play should be hidden until the queue is armed");
+      const canvasSize = await page.locator("#stage-canvas").evaluate(function (c) {
+        return { width: c.width, height: c.height };
       });
+      if (canvasSize.width !== 1280 || canvasSize.height !== 720) {
+        throw new Error("canvas internal size is not 1280x720: " + JSON.stringify(canvasSize));
+      }
       await page.evaluate(function (fixture) {
+        window.MainFloorApp.setVisualMode("organic");
         return window.MainFloorApp.applyStageFixture(fixture);
       }, stageFixture());
-      await page.waitForFunction(function () {
-        var el = document.querySelector("[data-role=now-title]");
-        return el && /Neon Warehouse/.test(el.textContent || "");
-      }, { timeout: 4000 });
-      const afterTitle = await page.locator("[data-role=now-title]").textContent();
-      const afterArtist = await page.locator("[data-role=now-artist]").textContent();
-      const afterWave = await page.locator("[data-role=now-wave]").evaluate(function (c) {
-        return c.toDataURL();
+      await page.evaluate(function () {
+        return new Promise(function (resolve) {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(resolve);
+          });
+        });
       });
-      logs.push("driven title=" + JSON.stringify(afterTitle) + " artist=" + JSON.stringify(afterArtist));
-      if (!/Neon Warehouse/.test(afterTitle || "")) {
-        throw new Error("driven fixture did not change now-playing title: " + afterTitle + " (was " + beforeTitle + ")");
-      }
-      if (!/Pedda vom Mond/.test(afterArtist || "")) {
-        throw new Error("driven fixture did not show artist: " + afterArtist);
-      }
-      if (afterWave === beforeWave) {
-        throw new Error("driven fixture did not change now-playing waveform");
-      }
       const paint = await paintedFraction(page);
       logs.push("paint=" + JSON.stringify(paint));
       if (paint.fraction < 0.85 || paint.bboxFraction < 0.85) {
         throw new Error("stage surface not substantially filled: " + JSON.stringify(paint));
       }
-      await page.waitForFunction(function () {
-        var el = document.getElementById("comfy-pill");
-        return el && (el.getAttribute("data-ready") === "up" || el.getAttribute("data-ready") === "down");
-      }, { timeout: 8000 });
-      const ready = await page.locator("#comfy-pill").getAttribute("data-ready");
-      const pill = await page.locator("#comfy-pill").textContent();
-      logs.push("readiness pill=" + pill + " data-ready=" + ready);
-      if (ready !== "up" && ready !== "down") {
-        throw new Error("pill did not reflect ComfyUI up/down: " + pill);
+      const modes = ["organic", "kaleidoscope", "fluid"];
+      const shots = {};
+      for (var m = 0; m < modes.length; m++) {
+        var mode = modes[m];
+        await page.evaluate(function (id) {
+          return window.MainFloorApp.setVisualMode(id);
+        }, mode);
+        await page.evaluate(function () {
+          return new Promise(function (resolve) {
+            requestAnimationFrame(function () {
+              requestAnimationFrame(resolve);
+            });
+          });
+        });
+        var pixels = await page.locator("#stage-canvas").evaluate(function (canvas) {
+          var ctx = canvas.getContext("2d");
+          return ctx.getImageData(0, 0, canvas.width, canvas.height).data.slice(0, 64).join(",");
+        });
+        var shotPath = path.join(SCRATCH, "stage-" + mode + ".png");
+        await page.locator("#stage").screenshot({ path: shotPath });
+        shots[mode] = pixels;
+        logs.push("mode " + mode + " shot=" + shotPath);
+      }
+      if (shots.organic === shots.kaleidoscope) {
+        throw new Error("switching to Kaleidoscope did not change stage pixels");
+      }
+      if (shots.kaleidoscope === shots.fluid) {
+        throw new Error("switching to Fluid did not change stage pixels");
       }
       const shot = path.join(SCRATCH, i === 1 ? "dj-page.png" : "dj-page-first.png");
-      await page.locator("#stage").screenshot({ path: shot });
+      await page.locator("body").screenshot({ path: shot });
       await page.close();
     }
   } finally {
@@ -238,6 +241,16 @@ async function main() {
   try {
     const html = await waitForServer(8000);
     serveLog += "\nGET / status=" + html.status + " bytes=" + html.body.length + "\n";
+    if (!/stage-canvas/.test(html.body) || !/data-capture="16:9"/.test(html.body)) {
+      throw new Error("HTML missing 16:9 stage canvas");
+    }
+    if (!/magic-btn/.test(html.body) || !/START THE MAGIC/.test(html.body)) {
+      throw new Error("HTML missing Magic button");
+    }
+    if (!/play-btn/.test(html.body)) {
+      throw new Error("HTML missing Play button");
+    }
+    serveLog += "html has 16:9 canvas + Magic + Play\n";
     if (!playwrightAvailable()) {
       write(
         "launch-unavailable.log",

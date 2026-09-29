@@ -50,6 +50,10 @@
   function createAudioEngine(mixer) {
     var ctx = null;
     var master = null;
+    var analyser = null;
+    var freqDb = null;
+    var freq01 = null;
+    var timeData = null;
     var startedAt = { a: 0, b: 0 };
     var originPos = { a: 0, b: 0 };
     var lastTempo = { a: 1, b: 1 };
@@ -65,6 +69,12 @@
       ctx = new AC();
       master = ctx.createGain();
       master.connect(ctx.destination);
+      if (typeof ctx.createAnalyser === "function") {
+        analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.65;
+        master.connect(analyser);
+      }
       ["a", "b"].forEach(function (id) {
         var low = ctx.createBiquadFilter();
         low.type = "lowshelf";
@@ -280,6 +290,44 @@
       return out;
     }
 
+    function sampleLiveFrame() {
+      if (!analyser || !ctx) return null;
+      var n = analyser.frequencyBinCount || analyser.fftSize / 2 || 1024;
+      if (!freq01 || freq01.length !== n) {
+        freqDb = new Float32Array(n);
+        freq01 = new Float32Array(n);
+        timeData = new Float32Array(analyser.fftSize || n * 2);
+      }
+      if (typeof analyser.getFloatFrequencyData === "function") {
+        analyser.getFloatFrequencyData(freqDb);
+        for (var i = 0; i < n; i++) {
+          freq01[i] = Math.min(1, Math.max(0, (freqDb[i] + 100) / 100));
+        }
+      } else if (typeof analyser.getByteFrequencyData === "function") {
+        var bytes = new Uint8Array(n);
+        analyser.getByteFrequencyData(bytes);
+        for (var j = 0; j < n; j++) freq01[j] = bytes[j] / 255;
+      }
+      var energy = 0;
+      if (typeof analyser.getFloatTimeDomainData === "function") {
+        analyser.getFloatTimeDomainData(timeData);
+        var ss = 0;
+        for (var k = 0; k < timeData.length; k++) ss += timeData[k] * timeData[k];
+        energy = Math.min(1, Math.sqrt(ss / timeData.length) * 2);
+      } else {
+        var s = 0;
+        for (var b = 0; b < n; b++) s += freq01[b];
+        energy = n ? s / n : 0;
+      }
+      return {
+        frequencies: freq01,
+        waveform: timeData || new Float32Array(0),
+        energy: energy,
+        binCount: n,
+        currentTime: ctx.currentTime,
+      };
+    }
+
     function sourceState(id) {
       var src = sources[id];
       if (!src) return null;
@@ -308,6 +356,7 @@
       seek: seek,
       applyLoop: applyLoop,
       peaks: peaks,
+      sampleLiveFrame: sampleLiveFrame,
       sourceState: sourceState,
       context: function () {
         return ctx;

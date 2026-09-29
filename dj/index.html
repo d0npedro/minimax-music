@@ -3,158 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MAIN FLOOR — Clean Techno DJ</title>
+  <title>Pedda vom Mond Automixer</title>
   <link rel="stylesheet" href="css/dj.css">
 </head>
 <body>
   <div id="file-banner" class="file-banner">
-    Opened as a file. Script tags still run, but for local audio decode and ComfyUI fetch
-    serve this folder: <code>node dj/serve.js</code> then open <code>http://127.0.0.1:8787</code>
+    Serve this folder: <code>node dj/serve.js</code> then open <code>http://127.0.0.1:8787</code>
   </div>
 
-  <main class="output" id="output">
-    <section id="stage" class="stage-capture" data-capture="16:9" aria-label="Live mix output">
-      <canvas data-role="stage-canvas" id="stage-canvas" width="1280" height="720"></canvas>
-      <div class="stage-inner">
-        <div class="now-stack">
-          <div class="now-layer" data-role="now-layer" id="now-layer">
-            <div class="now-kicker" data-role="now-kicker">NOW PLAYING</div>
-            <h2 class="now-title" data-role="now-title">Waiting for the floor</h2>
-            <p class="now-artist" data-role="now-artist">Main Floor</p>
-            <div class="now-wave">
-              <canvas data-role="now-wave" width="1120" height="200"></canvas>
-            </div>
-          </div>
-          <div class="in-layer" data-role="in-layer" id="in-layer" hidden>
-            <div class="now-kicker">INCOMING</div>
-            <h2 class="now-title" data-role="in-title"></h2>
-            <p class="now-artist" data-role="in-artist"></p>
-            <div class="now-wave">
-              <canvas data-role="in-wave" width="1120" height="200"></canvas>
-            </div>
-          </div>
-        </div>
-        <ol class="upcoming" id="upcoming-list" data-role="upcoming-list"></ol>
-      </div>
-    </section>
-  </main>
+  <section id="stage" class="stage-capture" data-capture="16:9" aria-label="Live mix output">
+    <canvas data-role="stage-canvas" id="stage-canvas" width="1280" height="720"></canvas>
+    <div id="stage-hud" class="stage-hud">
+      <p id="hud-now" class="hud-now" data-role="hud-now"></p>
+      <p id="hud-artist" class="hud-artist" data-role="hud-artist"></p>
+      <p id="hud-album" class="hud-album" data-role="hud-album"></p>
+      <p id="hud-yt" class="hud-yt" data-role="hud-yt"></p>
+      <p id="gen-status" class="gen-status" data-role="status">idle</p>
+      <p id="queue-count" class="queue-count" data-role="queue-count"></p>
+      <p id="queue-activity" class="queue-activity" data-role="queue-activity" data-kind=""></p>
+      <ol id="queue-log" class="queue-log" data-role="queue-log"></ol>
+    </div>
+  </section>
 
-  <aside class="operator" id="operator">
-    <header class="top">
-      <div class="brand">
-        <h1>Main Floor</h1>
-        <p>Driving techno · relentless Schranz · first kick to last beat</p>
-      </div>
-      <div class="arc" id="energy-arc" role="tablist" aria-label="Energy arc">
-        <button type="button" data-arc="0"><strong>First kick</strong>open the floor</button>
-        <button type="button" data-arc="1" class="active"><strong>Drive</strong>hold pressure</button>
-        <button type="button" data-arc="2"><strong>Schranz peak</strong>no mercy</button>
-        <button type="button" data-arc="3"><strong>Last beat</strong>final twenty</button>
-      </div>
-      <div id="comfy-pill" class="status-pill down">ComfyUI offline</div>
-    </header>
-
-    <section class="gen" id="generate-panel">
-      <div class="gen-head">
-        <h2>MiniMax cook</h2>
-        <span id="gen-status" class="gen-status">idle</span>
-      </div>
-      <button type="button" id="magic-btn" class="magic">START THE MAGIC</button>
-      <p class="magic-hint">Kocht 4 Tracks vor. A spielt, B liegt bereit. Crossfade A→B, dann lädt A den nächsten — wie ein DJ, endlos.</p>
-      <div class="presets">
-        <button class="ctl" type="button" data-preset="Warehouse Drive">Warehouse Drive</button>
-        <button class="ctl" type="button" data-preset="Peak Schranz">Peak Schranz</button>
-        <button class="ctl" type="button" data-preset="Last 20 Minutes">Last 20 Minutes</button>
-        <button class="ctl hot" type="button" id="match-btn">Match playing deck</button>
-      </div>
-      <div class="gen-row">
-        <label>Target
-          <select id="gen-target">
-            <option value="auto">Empty deck</option>
-            <option value="a">Deck A</option>
-            <option value="b">Deck B</option>
-          </select>
-        </label>
-        <button class="ctl primary" type="button" id="generate-btn">Generate into deck</button>
-      </div>
-      <textarea id="prompt" placeholder="Optional extra direction… or just hit a preset."></textarea>
-      <div id="caption-preview" class="caption-preview">Select a preset or match the playing deck.</div>
-    </section>
-  </aside>
-
-  <div id="booth" class="booth is-hidden" hidden aria-hidden="true">
-    <section class="deck" id="deck-a" data-deck="a">
-      <div class="deck-head">
-        <span class="deck-id">Deck A</span>
-        <span class="track-name" data-role="name">empty</span>
-      </div>
-      <div class="wave-wrap"><canvas data-role="wave" width="800" height="176"></canvas></div>
-      <div class="transport">
-        <button class="ctl primary" data-act="play">Play</button>
-        <button class="ctl" data-act="cue">Cue</button>
-        <button class="ctl" data-act="sync">Sync</button>
-        <button class="ctl" data-act="loop-in">In</button>
-        <button class="ctl" data-act="loop-out">Out</button>
-        <button class="ctl" data-act="loop">Loop</button>
-        <label class="ctl">Load<input type="file" accept="audio/mpeg,audio/wav,audio/*,.mp3,.wav" data-act="load"></label>
-      </div>
-      <div class="slider-row"><span>Tempo</span><input type="range" min="0.84" max="1.16" step="0.001" value="1" data-act="tempo"><span data-role="tempo">±0.0%</span></div>
-      <div class="slider-row"><span>BPM</span><input type="number" min="80" max="200" step="0.1" value="150" data-act="bpm"><span data-role="pos">0.0s</span></div>
-      <div class="cues">
-        <button type="button" data-act="hot" data-i="0">1</button>
-        <button type="button" data-act="hot" data-i="1">2</button>
-        <button type="button" data-act="hot" data-i="2">3</button>
-        <button type="button" data-act="hot" data-i="3">4</button>
-      </div>
-    </section>
-
-    <section class="mixer" id="mixer">
-      <h2>Mixer</h2>
-      <div class="eq-grid">
-        <div class="eq-col" data-eq="a">
-          <label>A HI<input type="range" orient="vertical" min="0" max="1" step="0.01" value="0.5" data-eq-band="high"></label>
-          <label>A MID<input type="range" orient="vertical" min="0" max="1" step="0.01" value="0.5" data-eq-band="mid"></label>
-          <label>A LOW<input type="range" orient="vertical" min="0" max="1" step="0.01" value="0.5" data-eq-band="low"></label>
-          <label>A FLT<input type="range" min="0" max="1" step="0.01" value="0.5" data-act="filter-a"></label>
-        </div>
-        <div class="eq-col" data-eq="b">
-          <label>B HI<input type="range" orient="vertical" min="0" max="1" step="0.01" value="0.5" data-eq-band="high"></label>
-          <label>B MID<input type="range" orient="vertical" min="0" max="1" step="0.01" value="0.5" data-eq-band="mid"></label>
-          <label>B LOW<input type="range" orient="vertical" min="0" max="1" step="0.01" value="0.5" data-eq-band="low"></label>
-          <label>B FLT<input type="range" min="0" max="1" step="0.01" value="0.5" data-act="filter-b"></label>
-        </div>
-      </div>
-      <div class="xfader">
-        <label>Crossfader
-          <input id="xfader" type="range" min="0" max="1" step="0.001" value="0.5">
-        </label>
-      </div>
-    </section>
-
-    <section class="deck" id="deck-b" data-deck="b">
-      <div class="deck-head">
-        <span class="deck-id">Deck B</span>
-        <span class="track-name" data-role="name">empty</span>
-      </div>
-      <div class="wave-wrap"><canvas data-role="wave" width="800" height="176"></canvas></div>
-      <div class="transport">
-        <button class="ctl primary" data-act="play">Play</button>
-        <button class="ctl" data-act="cue">Cue</button>
-        <button class="ctl" data-act="sync">Sync</button>
-        <button class="ctl" data-act="loop-in">In</button>
-        <button class="ctl" data-act="loop-out">Out</button>
-        <button class="ctl" data-act="loop">Loop</button>
-        <label class="ctl">Load<input type="file" accept="audio/mpeg,audio/wav,audio/*,.mp3,.wav" data-act="load"></label>
-      </div>
-      <div class="slider-row"><span>Tempo</span><input type="range" min="0.84" max="1.16" step="0.001" value="1" data-act="tempo"><span data-role="tempo">±0.0%</span></div>
-      <div class="slider-row"><span>BPM</span><input type="number" min="80" max="200" step="0.1" value="150" data-act="bpm"><span data-role="pos">0.0s</span></div>
-      <div class="cues">
-        <button type="button" data-act="hot" data-i="0">1</button>
-        <button type="button" data-act="hot" data-i="1">2</button>
-        <button type="button" data-act="hot" data-i="2">3</button>
-        <button type="button" data-act="hot" data-i="3">4</button>
-      </div>
-    </section>
+  <div id="shell" class="shell" data-phase="idle">
+    <button type="button" id="magic-btn" class="magic">START THE MAGIC</button>
+    <button type="button" id="play-btn" class="play" hidden>PLAY</button>
   </div>
 
   <script src="js/mixer.js"></script>
@@ -162,12 +35,23 @@
   <script src="js/generate.js"></script>
   <script src="js/readiness.js"></script>
   <script src="js/tracks.js"></script>
+  <script src="js/album.js"></script>
   <script src="js/one-press.js"></script>
   <script src="js/endless.js"></script>
   <script src="js/crate.js"></script>
   <script src="js/audio-engine.js"></script>
   <script src="js/comfy-client.js"></script>
+  <script src="js/hex-analysis.js"></script>
+  <script src="js/echo-mapping.js"></script>
+  <script src="js/ghost-modes.js"></script>
   <script src="js/stage.js"></script>
+  <script src="js/magic-flow.js"></script>
+  <script src="js/lab.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/live-swap.js"></script>
+  <script src="js/features/extras.js"></script>
+  <script src="js/features/fullscreen-visuals.js"></script>
+  <script src="js/features/output-clips.js"></script>
+  <script src="js/features/pack-twelve.js"></script>
 </body>
 </html>

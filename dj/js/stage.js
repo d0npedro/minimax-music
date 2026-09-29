@@ -3,15 +3,29 @@
  * No DOM, no Web Audio.
  */
 (function (root, factory) {
-  var api = factory();
+  var api = factory(root);
   if (typeof module === "object" && module.exports) {
     module.exports = api;
   }
   if (root && typeof root === "object") {
     root.MainFloorStage = api;
   }
-})(typeof window !== "undefined" ? window : typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof window !== "undefined" ? window : typeof globalThis !== "undefined" ? globalThis : this, function (root) {
   var CAPTURE = { width: 1280, height: 720, aspect: 16 / 9 };
+  var VISUAL_MODES = ["organic", "orbit", "kaleidoscope", "lattice", "fluid", "aurora"];
+  var DEFAULT_VISUAL_MODE = "organic";
+
+  function resolveGhost() {
+    if (root && root.MainFloorGhost) return root.MainFloorGhost;
+    if (typeof require === "function") {
+      try {
+        return require("./ghost-modes.js");
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
   var WAVEFORM_WIDTH = 1120;
   var WAVEFORM_BINS = 256;
   var FALLBACK_ARTIST = "Main Floor";
@@ -29,6 +43,13 @@
 
   function playheadX(position, duration) {
     return playheadFraction(position, duration) * WAVEFORM_WIDTH;
+  }
+
+  function formatClock(seconds) {
+    var s = Math.max(0, Math.floor(Number(seconds) || 0));
+    var m = Math.floor(s / 60);
+    var r = s % 60;
+    return m + ":" + (r < 10 ? "0" : "") + r;
   }
 
   function stripExt(name) {
@@ -143,6 +164,9 @@
       key: extra.key || "track",
       title: display.title,
       artist: display.artist,
+      album: source.album || (source.meta && source.meta.album) || extra.album || "",
+      youtubeMusic: source.youtubeMusic || (source.meta && source.meta.youtubeMusic) || extra.youtubeMusic || "",
+      catalog: source.catalog || (source.meta && source.meta.catalog) || extra.catalog || "",
       waveform: extra.waveform || waveformOf(source, extra.peaks, display.title),
       playhead: playhead,
       playheadX: playhead * WAVEFORM_WIDTH,
@@ -211,6 +235,14 @@
         transition: { active: false, progress: 1, outgoing: null, incoming: null },
         upcoming: afterQueue,
         mixProgress: 1,
+        visualMode: resolveVisualMode(input),
+        visualFrom: input.visualFrom || null,
+        visualFade: input.visualFade != null ? input.visualFade : 1,
+        visual: input.visual || null,
+        time: Number(input.time) || 0,
+        overlay: input.overlay || null,
+        credit: "Pedda vom Mond Automixer",
+        statusHint: input.statusHint || "",
       };
     }
 
@@ -267,6 +299,63 @@
       transition: transition,
       upcoming: upcoming,
       mixProgress: progress,
+      visualMode: resolveVisualMode(input),
+      visualFrom: input.visualFrom || null,
+      visualFade: input.visualFade != null ? input.visualFade : 1,
+      visual: input.visual || null,
+      time: Number(input.time) || 0,
+      overlay: input.overlay || null,
+      credit: "Pedda vom Mond Automixer",
+      statusHint: input.statusHint || "",
+    };
+  }
+
+  function allowedVisualModes() {
+    var Ghost = resolveGhost();
+    if (Ghost && Ghost.MODES && Ghost.MODES.length) return Ghost.MODES;
+    return VISUAL_MODES;
+  }
+
+  function resolveVisualMode(input) {
+    var mode = input && input.visualMode;
+    var allowed = allowedVisualModes();
+    if (allowed.indexOf(mode) !== -1) return mode;
+    return DEFAULT_VISUAL_MODE;
+  }
+
+  function portraitSafeRect(w, h) {
+    w = Number(w) || CAPTURE.width;
+    h = Number(h) || CAPTURE.height;
+    var safeW = Math.min(w, (h * 9) / 16);
+    return {
+      x: (w - safeW) / 2,
+      y: 0,
+      width: safeW,
+      height: h,
+      cx: w / 2,
+    };
+  }
+
+  function chromeLayout(w, h) {
+    var safe = portraitSafeRect(w, h);
+    var panelW = Math.min(380, Math.max(160, safe.width - 24));
+    var timeW = Math.min(360, Math.max(180, safe.width - 32));
+    return {
+      safe: safe,
+      status: { x: safe.cx, y: h - 36, align: "center" },
+      overlay: {
+        x: safe.cx - panelW / 2,
+        y: Math.max(24, h * 0.1),
+        width: panelW,
+        height: Math.min(260, h * 0.42),
+      },
+      timeline: {
+        x: safe.cx - timeW / 2,
+        y: h - 156,
+        width: timeW,
+        height: 52,
+        cx: safe.cx,
+      },
     };
   }
 
@@ -279,8 +368,8 @@
     if (!ctx) return;
     var w = (model && model.capture && model.capture.width) || CAPTURE.width;
     var h = (model && model.capture && model.capture.height) || CAPTURE.height;
-    if (ctx.canvas.width !== w) ctx.canvas.width = w;
-    if (ctx.canvas.height !== h) ctx.canvas.height = h;
+    if (ctx.canvas && ctx.canvas.width !== w) ctx.canvas.width = w;
+    if (ctx.canvas && ctx.canvas.height !== h) ctx.canvas.height = h;
     var g = ctx.createLinearGradient(0, 0, w, h);
     g.addColorStop(0, "#0a0b10");
     g.addColorStop(0.55, "#07080c");
@@ -288,13 +377,174 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
     var glow = ctx.createRadialGradient(w * 0.5, h * 0.22, 20, w * 0.5, h * 0.18, w * 0.55);
-    glow.addColorStop(0, "rgba(214,255,47,0.08)");
-    glow.addColorStop(1, "rgba(214,255,47,0)");
+    glow.addColorStop(0, "rgba(255,61,154),0.08)");
+    glow.addColorStop(1, "rgba(255,61,154),0)");
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = "rgba(236,232,223,0.06)";
     ctx.lineWidth = 1;
     ctx.strokeRect(12.5, 12.5, w - 25, h - 25);
+  }
+
+  function paintStageVisualizer(ctx, model) {
+    if (!ctx) return;
+    var w = (model && model.capture && model.capture.width) || CAPTURE.width;
+    var h = (model && model.capture && model.capture.height) || CAPTURE.height;
+    if (ctx.canvas && ctx.canvas.width !== w) ctx.canvas.width = w;
+    if (ctx.canvas && ctx.canvas.height !== h) ctx.canvas.height = h;
+    var Ghost = resolveGhost();
+    var Echo = root && root.MainFloorEcho;
+    if (!Echo && typeof require === "function") {
+      try {
+        Echo = require("./echo-mapping.js");
+      } catch (e) {
+        Echo = null;
+      }
+    }
+    var visual = (model && model.visual) || (Echo && Echo.idleVisual ? Echo.idleVisual((model && model.time) || 0) : null);
+    var mode = (model && model.visualMode) || DEFAULT_VISUAL_MODE;
+    var dc = {
+      ctx: ctx,
+      width: w,
+      height: h,
+      visual: visual,
+      time: (model && model.time) || (visual && visual.t) || 0,
+    };
+    if (Ghost && visual && Ghost.drawTransition && model.visualFrom && (model.visualFade == null || model.visualFade < 1)) {
+      Ghost.drawTransition(model.visualFrom, mode, model.visualFade, dc);
+    } else if (Ghost && Ghost.drawMode && visual) {
+      Ghost.drawMode(mode, dc);
+    } else {
+      paintStageBackground(ctx, model);
+    }
+    paintChrome(ctx, model);
+  }
+
+  function fitText(ctx, text, maxWidth) {
+    var s = String(text || "");
+    if (!maxWidth || !ctx.measureText) return s;
+    if (ctx.measureText(s).width <= maxWidth) return s;
+    while (s.length > 1 && ctx.measureText(s + "…").width > maxWidth) {
+      s = s.slice(0, -1);
+    }
+    return s + "…";
+  }
+
+  function paintSoftLine(ctx, text, x, y, maxW) {
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 1;
+    ctx.fillText(fitText(ctx, text, maxW), x, y);
+  }
+
+  function paintChrome(ctx, model) {
+    if (!ctx || !model) return;
+    var w = (model.capture && model.capture.width) || CAPTURE.width;
+    var h = (model.capture && model.capture.height) || CAPTURE.height;
+    paintTimeline(ctx, model, w, h);
+    if (model.overlay) paintLabOverlay(ctx, model.overlay, w, h);
+  }
+
+  function paintTimeline(ctx, model, w, h) {
+    var now = model && model.nowPlaying;
+    if (!now || !now.duration) return;
+    var layout = chromeLayout(w, h).timeline;
+    var samples = now.waveform && now.waveform.length ? now.waveform : syntheticWaveform(now.title, 96);
+    var playhead = clamp(Number(now.playhead) || 0, 0, 1);
+    var x0 = layout.x;
+    var y0 = layout.y;
+    var tw = layout.width;
+    var th = layout.height;
+    var mid = y0 + th * 0.42;
+    var n = samples.length;
+    var gap = tw / n;
+    var bar = Math.max(1, gap * 0.62);
+    ctx.save();
+    ctx.globalCompositeOperation = "source-over";
+    for (var i = 0; i < n; i++) {
+      var amp = Math.max(0.06, samples[i]) * (th * 0.42);
+      var x = x0 + i * gap + (gap - bar) / 2;
+      var played = i / n <= playhead;
+      ctx.globalAlpha = played ? 0.92 : 0.22;
+      ctx.fillStyle = played ? "#ff3d9a" : "#ece8df";
+      ctx.fillRect(x, mid - amp, bar, amp * 2);
+    }
+    var px = x0 + playhead * tw;
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = "rgba(255,61,154),0.85)";
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(px - 1, y0 + 2, 2, th - 10);
+    ctx.beginPath();
+    ctx.arc(px, mid, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+    if (model.mixProgress > 0 && model.mixProgress < 1) {
+      var mx = x0 + clamp(model.mixProgress, 0, 1) * tw;
+      ctx.globalAlpha = 0.45;
+      ctx.fillStyle = "#ff2d55";
+      ctx.fillRect(mx - 1, y0 + 8, 2, th - 22);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textBaseline = "top";
+    ctx.font = "600 11px Segoe UI, Helvetica Neue, sans-serif";
+    ctx.fillStyle = "rgba(236,232,223,0.72)";
+    ctx.textAlign = "left";
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 10;
+    ctx.fillText(formatClock(now.position), x0, y0 + th - 8);
+    ctx.textAlign = "right";
+    ctx.fillText("-" + formatClock(Math.max(0, now.duration - now.position)), x0 + tw, y0 + th - 8);
+    ctx.restore();
+  }
+
+  function paintLabOverlay(ctx, overlay, w, h) {
+    var view = overlay;
+    if (overlay && !overlay.kicker && root && root.MainFloorLab && root.MainFloorLab.overlayView) {
+      view = root.MainFloorLab.overlayView(overlay);
+    } else if (overlay && overlay.payload && !overlay.params) {
+      if (typeof require === "function") {
+        try {
+          view = require("./lab.js").overlayView(overlay);
+        } catch (e) {
+          view = overlay;
+        }
+      }
+    }
+    if (!view) return;
+    var layout = chromeLayout(w, h);
+    var maxW = layout.overlay.width;
+    var cx = layout.safe.cx;
+    var y = layout.overlay.y + 8;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(255,61,154),0.78)";
+    ctx.font = "600 11px Segoe UI, Helvetica Neue, sans-serif";
+    paintSoftLine(ctx, String(view.kicker || "Pedda vom Mond Automixer").toUpperCase(), cx, y, maxW);
+    y += 26;
+    ctx.fillStyle = "#ece8df";
+    ctx.font = "700 22px Segoe UI, Helvetica Neue, sans-serif";
+    paintSoftLine(ctx, String(view.title || "Live lab").toUpperCase(), cx, y, maxW);
+    y += 24;
+    if (view.label) {
+      ctx.fillStyle = "rgba(236,232,223,0.82)";
+      ctx.font = "600 15px Segoe UI, Helvetica Neue, sans-serif";
+      paintSoftLine(ctx, String(view.label), cx, y, maxW);
+      y += 22;
+    }
+    var bits = [];
+    (view.params || []).slice(0, 3).forEach(function (row) {
+      if (row && row.value) bits.push(String(row.value));
+    });
+    if (view.queue != null) bits.push("Q" + view.queue);
+    if (bits.length) {
+      ctx.fillStyle = "rgba(255,61,154),0.8)";
+      ctx.font = "600 12px Segoe UI, Helvetica Neue, sans-serif";
+      paintSoftLine(ctx, bits.join("  ·  "), cx, y, maxW);
+    }
+    ctx.restore();
   }
 
   function renderUpcoming(list, rows) {
@@ -334,7 +584,7 @@
       if (ctx) {
         paintWaveform(ctx, row, {
           showPlayhead: false,
-          color: row.nearNext ? "#d6ff2f" : "#c8c4bb",
+          color: row.nearNext ? "#ff3d9a" : "#c8c4bb",
           dim: "#8a867c",
         });
       }
@@ -351,7 +601,7 @@
     var bg = root.querySelector("[data-role=stage-canvas]");
     if (bg) {
       var bgCtx = bg.getContext("2d");
-      paintStageBackground(bgCtx, model);
+      paintStageVisualizer(bgCtx, model);
     }
 
     var trans = model.transition && model.transition.active ? model.transition : null;
@@ -384,7 +634,7 @@
     var nowWave = root.querySelector("[data-role=now-wave]");
     if (nowWave && shown) {
       var nctx = nowWave.getContext("2d");
-      if (nctx) paintWaveform(nctx, shown, { showPlayhead: true, color: "#d6ff2f", dim: "#5c5a53" });
+      if (nctx) paintWaveform(nctx, shown, { showPlayhead: true, color: "#ff3d9a", dim: "#5c5a53" });
     }
     var inWave = root.querySelector("[data-role=in-wave]");
     if (inWave && trans && trans.incoming) {
@@ -396,13 +646,90 @@
     return model;
   }
 
+  function fullscreenElement(doc) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc) return null;
+    return doc.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement || null;
+  }
+
+  function isFullscreen(el, doc) {
+    var current = fullscreenElement(doc);
+    if (current) return !el || current === el;
+    return !!(el && el.classList && el.classList.contains("is-fullscreen"));
+  }
+
+  function applyFullscreenChrome(rootEl, active) {
+    if (!rootEl) return !!active;
+    if (rootEl.classList && rootEl.classList.toggle) {
+      rootEl.classList.toggle("is-fullscreen", !!active);
+    }
+    if (rootEl.setAttribute) rootEl.setAttribute("data-fullscreen", active ? "true" : "false");
+    return !!active;
+  }
+
+  function requestFullscreen(el) {
+    if (!el) return Promise.reject(new Error("no-element"));
+    var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (!fn) return Promise.reject(new Error("unsupported"));
+    return Promise.resolve(fn.call(el));
+  }
+
+  function exitFullscreen(doc) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc) return Promise.reject(new Error("no-document"));
+    var fn = doc.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+    if (!fn) return Promise.reject(new Error("unsupported"));
+    return Promise.resolve(fn.call(doc));
+  }
+
+  function toggleFullscreen(el, doc) {
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (isFullscreen(el, doc) && fullscreenElement(doc)) {
+      return exitFullscreen(doc).then(function () {
+        applyFullscreenChrome(el, false);
+        return false;
+      });
+    }
+    if (isFullscreen(el, doc)) {
+      applyFullscreenChrome(el, false);
+      return Promise.resolve(false);
+    }
+    if (el && (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen)) {
+      return requestFullscreen(el)
+        .then(function () {
+          applyFullscreenChrome(el, true);
+          return true;
+        })
+        .catch(function () {
+          var next = !(el.classList && el.classList.contains("is-fullscreen"));
+          applyFullscreenChrome(el, next);
+          return next;
+        });
+    }
+    applyFullscreenChrome(el, true);
+    return Promise.resolve(true);
+  }
+
+  function shouldHandleFullscreenHotkey(ev) {
+    if (!ev) return false;
+    if (ev.altKey || ev.ctrlKey || ev.metaKey) return false;
+    var key = ev.key || ev.code || "";
+    if (key !== "f" && key !== "F" && key !== "KeyF") return false;
+    var t = ev.target;
+    if (!t) return true;
+    var tag = String(t.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return false;
+    if (t.isContentEditable) return false;
+    return true;
+  }
+
   function paintWaveform(ctx, model, opts) {
     opts = opts || {};
     if (!ctx || !model) return;
     var w = opts.width != null ? opts.width : ctx.canvas.width;
     var h = opts.height != null ? opts.height : ctx.canvas.height;
     var samples = model.waveform || [];
-    var color = opts.color || "#d6ff2f";
+    var color = opts.color || "#ff3d9a";
     var dim = opts.dim || "#ece8df";
     var playhead = model.playhead != null ? model.playhead : 0;
     ctx.clearRect(0, 0, w, h);
@@ -432,16 +759,30 @@
     WAVEFORM_WIDTH: WAVEFORM_WIDTH,
     WAVEFORM_BINS: WAVEFORM_BINS,
     FALLBACK_ARTIST: FALLBACK_ARTIST,
+    VISUAL_MODES: VISUAL_MODES,
+    DEFAULT_VISUAL_MODE: DEFAULT_VISUAL_MODE,
     playheadFraction: playheadFraction,
     playheadX: playheadX,
+    formatClock: formatClock,
+    paintTimeline: paintTimeline,
     displayOf: displayOf,
     visualWeight: visualWeight,
     waveformOf: waveformOf,
     peaksFromAudioBuffer: peaksFromAudioBuffer,
+    portraitSafeRect: portraitSafeRect,
+    chromeLayout: chromeLayout,
     buildStage: buildStage,
     paintWaveform: paintWaveform,
     paintStageBackground: paintStageBackground,
+    paintStageVisualizer: paintStageVisualizer,
     render: render,
     transitionFromProgress: transitionFromProgress,
+    fullscreenElement: fullscreenElement,
+    isFullscreen: isFullscreen,
+    applyFullscreenChrome: applyFullscreenChrome,
+    requestFullscreen: requestFullscreen,
+    exitFullscreen: exitFullscreen,
+    toggleFullscreen: toggleFullscreen,
+    shouldHandleFullscreenHotkey: shouldHandleFullscreenHotkey,
   };
 });
